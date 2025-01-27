@@ -1,0 +1,1 @@
+## Kubernetes project from scrash
