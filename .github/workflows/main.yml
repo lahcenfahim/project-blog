@@ -1,0 +1,60 @@
+name: ArgoCD TP
+on:
+  push:
+    branches: [ "master" ]
+
+jobs:
+  build_and_push:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - name: nginx
+            directory: ./nginx
+            image: fahimlahcen/nginx-project
+          - name: php
+            directory: ./php
+            image: fahimlahcen/php-project-fpm
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Get HASH from last commit and to the images
+      id: get_version
+      run: echo "VERSION=$(echo $GITHUB_SHA | cut -c1-7)" >> $GITHUB_ENV
+
+    - name: Connexion to Docker Hub
+      uses: docker/login-action@v2
+      with:
+        username: ${{ secrets.DOCKERHUB_USERNAME }}
+        password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+    - name: Build and push image ${{ matrix.name }}
+      uses: docker/build-push-action@v4
+      with:
+        context: ${{ matrix.directory }}
+        file: ${{ matrix.directory }}/Dockerfile
+        push: true
+        tags: ${{ matrix.image }}:${{ env.VERSION }}
+
+  update_k8s:
+      needs: build_and_push
+      runs-on: ubuntu-latest
+
+      steps:
+      - name: Update Kubernetes manifists
+        run: |
+          eval $(ssh-agent -s)
+          ssh-add - <<< "${{ secrets.GH_SSH_KEY }}"
+          git clone git@github.com:lahcenfahim/infra.git
+          cd infra/k8s
+
+          NEW_TAG=$(echo $GITHUB_SHA | cut -c1-7)
+          sed -i "s|fahimlahcen/nginx-project\(:[a-zA-Z0-9_.-]*\)\?|fahimlahcen/nginx-project:${NEW_TAG}|g" php-nginx-deployment.yml
+          sed -i "s|fahimlahcen/php-project-fpm\(:[a-zA-Z0-9_.-]*\)\?|fahimlahcen/php-project-fpm:${NEW_TAG}|g" php-nginx-deployment.yml
+          git config --global user.name "GitHub Actions"
+          git config --global user.email "github-actions@example.com"
+          git add .
+          git commit -m "Update images tag in Kubernetes: $NEW_TAG"
+          git push origin master
