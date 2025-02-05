@@ -57,4 +57,4 @@ jobs:
           git config --global user.email "github-actions@example.com"
           git add .
           git commit -m "Update images tag in Kubernetes: $NEW_TAG"
-          git push origin master
+          git push origin main
